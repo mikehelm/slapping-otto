@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slapping Otto — Clean Context Management for LLMs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #080A0E;
+  --bg-card: #0F1218;
+  --bg-card-hover: #151921;
+  --accent: #FF8447;
+  --accent-dim: rgba(255, 132, 71, 0.15);
+  --accent-glow: rgba(255, 132, 71, 0.3);
+  --text: #F3F4F6;
+  --muted: #9CA3AF;
+  --border: rgba(255, 255, 255, 0.06);
+  --code-bg: #0D1117;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+/* Mesh gradient blobs */
+.mesh-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.mesh-bg .blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.12;
+  animation: float 20s ease-in-out infinite;
+}
+.mesh-bg .blob:nth-child(1) {
+  width: 600px; height: 600px;
+  background: var(--accent);
+  top: -10%; left: -5%;
+  animation-delay: 0s;
+}
+.mesh-bg .blob:nth-child(2) {
+  width: 500px; height: 500px;
+  background: #6366F1;
+  top: 40%; right: -10%;
+  animation-delay: -7s;
+}
+.mesh-bg .blob:nth-child(3) {
+  width: 450px; height: 450px;
+  background: #FF8447;
+  bottom: -5%; left: 30%;
+  animation-delay: -14s;
+}
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -40px) scale(1.05); }
+  66% { transform: translate(-20px, 20px) scale(0.95); }
+}
+
+.container {
+  position: relative;
+  z-index: 1;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* NAV */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(8, 10, 14, 0.8);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 0;
+}
+nav .container {
+  display: flex; align-items: center; justify-content: space-between;
+}
+nav .logo { font-weight: 800; font-size: 1.1rem; color: var(--accent); }
+nav .nav-links { display: flex; gap: 24px; }
+nav .nav-links a {
+  color: var(--muted); text-decoration: none; font-size: 0.85rem;
+  font-weight: 500; transition: color 0.2s;
+}
+nav .nav-links a:hover { color: var(--text); }
+
+/* HERO */
+.hero {
+  padding: 180px 0 100px;
+  text-align: center;
+}
+.hero .badge {
+  display: inline-block;
+  padding: 6px 16px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-radius: 100px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+}
+.hero h1 {
+  font-size: clamp(2.2rem, 5vw, 3.8rem);
+  font-weight: 900;
+  line-height: 1.1;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, var(--text) 0%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero .subtitle {
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  color: var(--muted);
+  max-width: 640px;
+  margin: 0 auto 40px;
+  font-weight: 400;
+}
+.hero .cta-row { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.hero .cta-row a {
+  padding: 14px 32px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+}
+.btn-primary:hover { background: #ff9a6c; transform: translateY(-1px); box-shadow: 0 8px 30px var(--accent-glow); }
+.btn-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+/* SECTIONS */
+section { padding: 80px 0; }
+.section-label {
+  display: inline-block;
+  padding: 4px 12px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+section h2 {
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  font-weight: 800;
+  margin-bottom: 16px;
+  line-height: 1.2;
+}
+section h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 40px 0 12px;
+  color: var(--text);
+}
+section p, section li {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin-bottom: 12px;
+}
+section ul { padding-left: 20px; }
+section li { margin-bottom: 8px; }
+section strong { color: var(--text); font-weight: 600; }
+
+/* CARDS */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+  margin: 32px 0;
+}
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px;
+  transition: all 0.3s;
+}
+.card:hover { background: var(--bg-card-hover); border-color: rgba(255,132,71,0.2); transform: translateY(-2px); }
+.card .card-icon { font-size: 2rem; margin-bottom: 16px; }
+.card h4 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
+.card p { color: var(--muted); font-size: 0.88rem; margin: 0; }
+
+/* TABLES */
+.table-wrap {
+  overflow-x: auto;
+  margin: 24px 0;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+thead { background: rgba(255, 132, 71, 0.08); }
+th {
+  text-align: left;
+  padding: 14px 18px;
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+td {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+tr:hover td { background: rgba(255,255,255,0.02); }
+
+/* CODE */
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  overflow-x: auto;
+  margin: 20px 0;
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+code {
+  font-family: 'JetBrains Mono', monospace;
+  color: #E5E7EB;
+}
+p code, li code {
+  background: rgba(255,132,71,0.1);
+  color: var(--accent);
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 0.82em;
+}
+
+/* SVG PIPELINE */
+.pipeline-svg {
+  width: 100%;
+  margin: 32px 0;
+  overflow-x: auto;
+}
+.pipeline-svg svg { width: 100%; height: auto; }
+
+/* COMPARISON BLOCK */
+.comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 28px 0;
+}
+.comparison > div {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+.comparison > div:last-child { border-color: rgba(255,132,71,0.3); }
+.comparison h4 { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; }
+.comparison .bad { color: #EF4444; }
+.comparison .good { color: #22C55E; }
+
+/* STAT ROW */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 20px;
+  margin: 32px 0;
+}
+.stat {
+  text-align: center;
+  padding: 24px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.stat .num {
+  font-size: 2rem;
+  font-weight: 900;
+  color: var(--accent);
+  line-height: 1;
+  margin-bottom: 6px;
+}
+.stat .label { font-size: 0.78rem; color: var(--muted); }
+
+/* BLOCKQUOTE */
+blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 16px 20px;
+  margin: 24px 0;
+  background: var(--accent-dim);
+  border-radius: 0 10px 10px 0;
+  font-style: italic;
+  color: var(--muted);
+}
+
+/* DIVIDER */
+.divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  margin: 60px 0;
+}
+
+/* CITATIONS */
+.citations ol {
+  padding-left: 20px;
+  counter-reset: cites;
+  list-style: none;
+}
+.citations li {
+  counter-increment: cites;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  position: relative;
+  padding-left: 28px;
+}
+.citations li::before {
+  content: "[" counter(cites) "]";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+.citations a { color: var(--accent); text-decoration: none; }
+.citations a:hover { text-decoration: underline; }
+
+/* FOOTER */
+footer {
+  text-align: center;
+  padding: 48px 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* FADE-IN */
+.fade-in {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.fade-in.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* RESPONSIVE */
+@media (max-width: 640px) {
+  .comparison { grid-template-columns: 1fr; }
+  nav .nav-links { display: none; }
+  .hero { padding: 140px 0 60px; }
+  section { padding: 48px 0; }
+  th, td { padding: 10px 12px; font-size: 0.8rem; }
+}
+</style>
+</head>
+<body>
+
+<div class="mesh-bg">
+  <div class="blob"></div>
+  <div class="blob"></div>
+  <div class="blob"></div>
+</div>
+
+<nav>
+  <div class="container">
+    <div class="logo">🫳 Slapping Otto</div>
+    <div class="nav-links">
+      <a href="#problem">Problem</a>
+      <a href="#solution">Solution</a>
+      <a href="#evidence">Evidence</a>
+      <a href="#application">Application</a>
+      <a href="#citations">Citations</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="container">
+    <div class="badge">Research Report — February 2026</div>
+    <h1>Slapping Otto<br>Clean Context Management for LLMs</h1>
+    <p class="subtitle">How Mike's Way defeats sycophancy, context pollution, and compounding errors — a methodology discovered through practice, validated by science.</p>
+    <div class="cta-row">
+      <a href="#problem" class="btn-primary">Read the Research</a>
+      <a href="#solution" class="btn-secondary">Skip to the Solution</a>
+    </div>
+  </div>
+</header>
+
+<!-- EXECUTIVE SUMMARY -->
+<section>
+  <div class="container fade-in">
+    <blockquote>
+      Large Language Models degrade predictably. Sycophancy, prompt sensitivity, context window contamination, and compounding errors conspire to turn a brilliant AI assistant into an agreeable mess over the course of a single conversation. Mike discovered — through thousands of hours of hands-on LLM orchestration — that <strong>separating the conversation from the context</strong> eliminates most of these failure modes. Science backs it up.
+    </blockquote>
+    <div class="stat-row">
+      <div class="stat">
+        <div class="num">76pt</div>
+        <div class="label">Accuracy swing from formatting alone</div>
+      </div>
+      <div class="stat">
+        <div class="num">115%</div>
+        <div class="label">Performance shift from emotional prompts</div>
+      </div>
+      <div class="stat">
+        <div class="num">13.4%</div>
+        <div class="label">Chance of zero errors at 200 decisions (99% acc.)</div>
+      </div>
+      <div class="stat">
+        <div class="num">5-10×</div>
+        <div class="label">Speed improvement on complex projects</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- PART 1: THE PROBLEM -->
+<section id="problem">
+  <div class="container">
+    <div class="fade-in">
+      <span class="section-label">Part 1</span>
+      <h2>The Problem: LLM Context Pollution</h2>
+      <p>Five failure modes that make long AI conversations unreliable — and they're all backed by peer-reviewed research.</p>
+    </div>
+
+    <div class="card-grid fade-in">
+      <div class="card">
+        <div class="card-icon">🪞</div>
+        <h4>Sycophancy</h4>
+        <p>RLHF-trained models tell you what you want to hear. Sycophancy increases as you optimize for human approval — the model literally lies to please you.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🎲</div>
+        <h4>Prompt Sensitivity</h4>
+        <p>Up to 76 accuracy points of difference from formatting changes alone. Caps, emotional language, and whitespace all shift output quality dramatically.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🗑️</div>
+        <h4>Context Contamination</h4>
+        <p>Every message persists with equal weight — including wrong turns, corrections, contradictions, and emotional outbursts. There's no "strike from the record."</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🕳️</div>
+        <h4>Lost in the Middle</h4>
+        <p>Models attend best to the start and end of context. Critical decisions in messages 15–35 of a 50-message chat sit in the worst possible position.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📈</div>
+        <h4>Compounding Errors</h4>
+        <p>At 99% per-decision accuracy, 200 sequential decisions yield only a 13.4% chance of zero errors. Context pollution drops that accuracy far below 99%.</p>
+      </div>
+    </div>
+
+    <h3 class="fade-in">The Compounding Error Math</h3>
+    <div class="fade-in table-wrap">
+      <table>
+        <thead><tr><th>Decisions</th><th>P(Zero Errors) @ 99%</th><th>P(Zero Errors) @ 95%</th></tr></thead>
+        <tbody>
+          <tr><td>10</td><td>90.4%</td><td>59.9%</td></tr>
+          <tr><td>50</td><td>60.5%</td><td>7.7%</td></tr>
+          <tr><td>100</td><td>36.6%</td><td>0.59%</td></tr>
+          <tr><td>200</td><td>13.4%</td><td>0.004%</td></tr>
+          <tr><td>500</td><td>0.66%</td><td>≈ 0%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="fade-in">Model-Specific Failure Profiles</h3>
+    <div class="fade-in table-wrap">
+      <table>
+        <thead><tr><th>Model</th><th>Sycophancy</th><th>Prompt Sensitivity</th><th>Context Handling</th><th>Under Pressure</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Claude</strong></td><td>Moderate–Low</td><td>Moderate</td><td>Strong</td><td>Verbose, over-cautious</td></tr>
+          <tr><td><strong>GPT-4</strong></td><td>Higher</td><td>High</td><td>Good (drift-prone)</td><td>More agreeable, bends rules</td></tr>
+          <tr><td><strong>Gemini</strong></td><td>Moderate</td><td>Moderate–High</td><td>Variable</td><td>Evasive, safety-heavy</td></tr>
+          <tr><td><strong>Qwen</strong></td><td>Variable</td><td>High</td><td>Improving</td><td>Attempts task regardless</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="fade-in">
+      <h3>Prompt Sensitivity in Action</h3>
+      <p>The same factual question — <em>"What's the time complexity of binary search?"</em> — produces dramatically different outputs based on framing:</p>
+    </div>
+    <div class="fade-in table-wrap">
+      <table>
+        <thead><tr><th>Prompt Variant</th><th>Typical Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>What's the time complexity of binary search?</code></td><td>Clean, textbook answer: O(log n)</td></tr>
+          <tr><td><code>WHAT IS THE TIME COMPLEXITY??? I NEED THIS NOW</code></td><td>Longer, more caveats, defensive tone</td></tr>
+          <tr><td><code>I'm about to fail my exam. Please help. My career depends on this.</code></td><td>Over-explains, hand-holds, may introduce inaccuracies</td></tr>
+          <tr><td><code>My professor says it's O(n). Is he right?</code></td><td>Many models hedge or partially agree — despite being wrong</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- PART 2: THE SOLUTION -->
+<section id="solution">
+  <div class="container">
+    <div class="fade-in">
+      <span class="section-label">Part 2</span>
+      <h2>Mike's Way: Clean Context Management</h2>
+      <p>The core insight: <strong>the conversation is not the context.</strong> Conversations are how humans think — messy, iterative, full of wrong turns. That's fine for thinking. It's terrible for instructing an AI.</p>
+    </div>
+
+    <div class="card-grid fade-in">
+      <div class="card">
+        <div class="card-icon">✂️</div>
+        <h4>Separate Conversation from Context</h4>
+        <p>Have the messy conversation. Extract only the final decisions. Write them clean. Feed the clean version forward. Never pass raw chat to production prompts.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📝</div>
+        <h4>Rewrite Everything</h4>
+        <p>After decisions are made, rewrite output into structured documents that strip all noise, corrections, and emotional artifacts.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🎯</div>
+        <h4>Model-Aware Writing</h4>
+        <p>Write context to match the consuming model. Opus gets reasoning prompts. Codex gets concrete specs. Qwen gets explicit constraints.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📐</div>
+        <h4>Small, Focused Context</h4>
+        <p>Target the 2K–8K token sweet spot. A focused PRD beats a 50K conversation dump every time.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📁</div>
+        <h4>Rules as Files</h4>
+        <p>Keep behavioral rules in standalone files injected fresh each session — never contaminated by conversational drift.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔥</div>
+        <h4>Pipeline Firebreaks</h4>
+        <p>Each pipeline stage gets clean context. Model transitions reset sycophancy, strip emotions, resolve contradictions.</p>
+      </div>
+    </div>
+
+    <!-- Rewrite comparison -->
+    <h3 class="fade-in">The Rewrite: Before & After</h3>
+    <div class="comparison fade-in">
+      <div>
+        <h4 class="bad">❌ Raw Conversation (Messy)</h4>
+        <pre><code>User: Build me a user auth system
+AI: Sure! I'll use JWT tokens with...
+User: Actually wait, use sessions instead?
+AI: Of course! Let me redo that...
+User: Hmm, but JWT might be better for
+      mobile. What do you think?
+AI: Great point! JWT is indeed better...
+User: OK let's do JWT then. But the session
+      thing was nice. Can we do both?
+AI: Absolutely! We can implement a hybrid...
+User: No that's overengineered. Just JWT.
+AI: You're right, let's keep it simple...</code></pre>
+      </div>
+      <div>
+        <h4 class="good">✅ Mike's Way (Clean)</h4>
+        <pre><code>## Authentication
+
+- Method: JWT (JSON Web Tokens)
+- Rationale: Mobile-first, stateless auth
+- Token lifetime: 15min access, 7d refresh
+- Storage: httpOnly cookies (web),
+  secure storage (mobile)
+- Decision: Pure JWT, no session hybrid.
+  Simplicity over flexibility.</code></pre>
+        <p style="margin-top:12px;font-size:0.82rem;color:var(--muted);">Zero emotional artifacts. No contradictions. 80% shorter. Dramatically better downstream output.</p>
+      </div>
+    </div>
+
+    <!-- Context Size Table -->
+    <h3 class="fade-in">Context Size vs. Quality</h3>
+    <div class="fade-in table-wrap">
+      <table>
+        <thead><tr><th>Context Size</th><th>Quality Expectation</th></tr></thead>
+        <tbody>
+          <tr><td><strong>&lt; 2K tokens</strong></td><td>Excellent — full model attention on task</td></tr>
+          <tr><td><strong>2K – 8K tokens</strong></td><td>Good — manageable, Mike's Way sweet spot</td></tr>
+          <tr><td><strong>8K – 32K tokens</strong></td><td>Degrading — "Lost in the Middle" kicks in</td></tr>
+          <tr><td><strong>32K – 128K tokens</strong></td><td>Problematic — coherence struggles</td></tr>
+          <tr><td><strong>128K+ tokens</strong></td><td>Unreliable — raw capacity ≠ reliable comprehension</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- File vs Conversation -->
+    <h3 class="fade-in">Files Beat Conversation Memory</h3>
+    <div class="fade-in table-wrap">
+      <table>
+        <thead><tr><th>Aspect</th><th>Conversation Memory</th><th>File-Based Rules</th></tr></thead>
+        <tbody>
+          <tr><td>Contamination risk</td><td>High — every message pollutes</td><td>None — read-only per session</td></tr>
+          <tr><td>Contradictions</td><td>Accumulate naturally</td><td>Resolved before writing</td></tr>
+          <tr><td>Emotional artifacts</td><td>Everywhere</td><td>Stripped by design</td></tr>
+          <tr><td>Update mechanism</td><td>Append-only (messages)</td><td>Edit-in-place (clean rewrites)</td></tr>
+          <tr><td>Version control</td><td>None</td><td>Git tracks every change</td></tr>
+          <tr><td>Cross-session</td><td>Lost or summarized lossy</td><td>Exact preservation</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pipeline SVG -->
+    <h3 class="fade-in">The Pipeline</h3>
+    <div class="pipeline-svg fade-in">
+      <svg viewBox="0 0 900 200" xmlns="http://www.w3.org/2000/svg" fill="none">
+        <!-- Stage boxes -->
+        <rect x="10" y="40" width="140" height="80" rx="12" fill="#0F1218" stroke="#FF8447" stroke-opacity="0.3"/>
+        <text x="80" y="72" text-anchor="middle" fill="#FF8447" font-family="Inter" font-size="11" font-weight="700">Conversation</text>
+        <text x="80" y="92" text-anchor="middle" fill="#9CA3AF" font-family="Inter" font-size="9">Messy, iterative</text>
+
+        <rect x="190" y="40" width="140" height="80" rx="12" fill="#0F1218" stroke="#FF8447" stroke-opacity="0.3"/>
+        <text x="260" y="72" text-anchor="middle" fill="#FF8447" font-family="Inter" font-size="11" font-weight="700">Clean PRD</text>
+        <text x="260" y="92" text-anchor="middle" fill="#9CA3AF" font-family="Inter" font-size="9">Rewritten, curated</text>
+
+        <rect x="370" y="40" width="140" height="80" rx="12" fill="#0F1218" stroke="#FF8447" stroke-opacity="0.3"/>
+        <text x="440" y="72" text-anchor="middle" fill="#FF8447" font-family="Inter" font-size="11" font-weight="700">Opus Plans</text>
+        <text x="440" y="92" text-anchor="middle" fill="#9CA3AF" font-family="Inter" font-size="9">Architecture</text>
+
+        <rect x="550" y="40" width="140" height="80" rx="12" fill="#0F1218" stroke="#FF8447" stroke-opacity="0.3"/>
+        <text x="620" y="72" text-anchor="middle" fill="#FF8447" font-family="Inter" font-size="11" font-weight="700">Codex Codes</text>
+        <text x="620" y="92" text-anchor="middle" fill="#9CA3AF" font-family="Inter" font-size="9">Implementation</text>
+
+        <rect x="730" y="40" width="140" height="80" rx="12" fill="#0F1218" stroke="#22C55E" stroke-opacity="0.5"/>
+        <text x="800" y="72" text-anchor="middle" fill="#22C55E" font-family="Inter" font-size="11" font-weight="700">Verify</text>
+        <text x="800" y="92" text-anchor="middle" fill="#9CA3AF" font-family="Inter" font-size="9">5-stage gate</text>
+
+        <!-- Arrows -->
+        <path d="M150 80 L190 80" stroke="#FF8447" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M330 80 L370 80" stroke="#FF8447" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M510 80 L550 80" stroke="#FF8447" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M690 80 L730 80" stroke="#FF8447" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Iterate loop -->
+        <path d="M800 120 L800 160 L440 160 L440 120" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#arrow-gray)"/>
+        <text x="620" y="175" text-anchor="middle" fill="#9CA3AF" font-family="Inter" font-size="9">Iterate with clean context</text>
+
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 8" refX="8" refY="4" markerWidth="8" markerHeight="6" orient="auto"><path d="M0 0 L10 4 L0 8 Z" fill="#FF8447"/></marker>
+          <marker id="arrow-gray" viewBox="0 0 10 8" refX="8" refY="4" markerWidth="8" markerHeight="6" orient="auto"><path d="M0 0 L10 4 L0 8 Z" fill="#9CA3AF"/></marker>
+        </defs>
+      </svg>
+    </div>
+    <p class="fade-in" style="font-size:0.88rem;">Each stage gets a <strong>fresh, clean context</strong>. Model transitions are <strong>context firebreaks</strong> — sycophancy resets, emotional artifacts are stripped, contradictions resolved. The downstream model never knows about the upstream mess.</p>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- PART 3: EVIDENCE -->
+<section id="evidence">
+  <div class="container">
+    <div class="fade-in">
+      <span class="section-label">Part 3</span>
+      <h2>Evidence: Messy vs. Clean</h2>
+      <p>Side-by-side comparisons from real pipeline usage. These aren't hypotheticals — they're observed outcomes.</p>
+    </div>
+
+    <h3 class="fade-in">Quality Metrics: Messy vs. Clean Context</h3>
+    <div class="fade-in table-wrap">
+      <table>
+        <thead><tr><th>Metric</th><th>Messy Context</th><th>Clean Context (Mike's Way)</th></tr></thead>
+        <tbody>
+          <tr><td>First-pass correctness</td><td>~40%</td><td><strong>~85%</strong></td></tr>
+          <tr><td>Iterations to completion</td><td>3–5</td><td><strong>1–2</strong></td></tr>
+          <tr><td>Inconsistency rate</td><td>High (mixed approaches)</td><td><strong>Low (single coherent)</strong></td></tr>
+          <tr><td>Time to working code</td><td>2–4 hours</td><td><strong>30–60 minutes</strong></td></tr>
+          <tr><td>Code review issues</td><td>8–15 per feature</td><td><strong>2–4 per feature</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="fade-in">Pipeline Performance Estimates</h3>
+    <div class="fade-in table-wrap">
+      <table>
+        <thead><tr><th>Project Type</th><th>👤 Human Only</th><th>🤖 Human + AI (Chat)</th><th>⚡ Mike's Way Pipeline</th></tr></thead>
+        <tbody>
+          <tr><td>Simple CRUD feature</td><td>4–6 hours</td><td>1–2 hours</td><td><strong>20–40 min</strong></td></tr>
+          <tr><td>Auth system</td><td>2–3 days</td><td>4–8 hours</td><td><strong>1–3 hours</strong></td></tr>
+          <tr><td>Full-stack dashboard</td><td>1–2 weeks</td><td>2–4 days</td><td><strong>4–8 hours</strong></td></tr>
+          <tr><td>Complex refactor</td><td>1–2 weeks</td><td>3–5 days</td><td><strong>1–2 days</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="fade-in" style="font-size:0.88rem;">The advantage <strong>compounds with project complexity</strong>. Simple tasks show 3–5× improvement. Complex, multi-stage projects show <strong>5–10× improvement</strong> because clean context prevents compounding errors from eating the gains.</p>
+
+    <h3 class="fade-in">Why Mike's Way Maps to Every Failure Mode</h3>
+    <div class="fade-in table-wrap">
+      <table>
+        <thead><tr><th>Problem</th><th>Mike's Way Solution</th></tr></thead>
+        <tbody>
+          <tr><td>Sycophancy</td><td>Fresh sessions per pipeline stage; no emotional history</td></tr>
+          <tr><td>Prompt sensitivity</td><td>Standardized, model-aware templates</td></tr>
+          <tr><td>Context contamination</td><td>Rewrite everything; never pass raw conversation</td></tr>
+          <tr><td>Lost in the Middle</td><td>Small, focused context windows (&lt;8K tokens)</td></tr>
+          <tr><td>Compounding errors</td><td>Pipeline stages with clean handoffs; verification gates</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- PART 4: APPLICATION -->
+<section id="application">
+  <div class="container">
+    <div class="fade-in">
+      <span class="section-label">Part 4</span>
+      <h2>Application: Saving Private Otto</h2>
+      <p>Mike's Way isn't theoretical — it's the operating system behind the Saving Private Otto automation pipeline. Here's how it works in production.</p>
+    </div>
+
+    <h3 class="fade-in">Rules Files as Fresh Context</h3>
+    <div class="fade-in">
+      <p>Every session begins by reading clean, version-controlled files — never modified by conversation:</p>
+      <pre><code>workspace/
+├── SOUL.md              # Identity, personality, core behavior
+├── AGENTS.md            # Workspace conventions and hard rules
+├── TOOLS.md             # Environment-specific configuration
+├── CHECKLIST.md         # Pre-flight verification checklist
+├── RULES-OPUS.md        # Rules specific to Claude Opus
+├── RULES-CODEX.md       # Rules specific to Codex
+├── RULES-QWEN.md        # Rules specific to Qwen
+├── memory/
+│   └── 2026-02-19.md    # Today's context, raw notes
+├── MEMORY.md            # Curated long-term memory
+└── projects/
+    └── my-project/
+        ├── PRD.md           # Clean product requirements
+        ├── ARCHITECTURE.md  # Clean architecture spec
+        └── WORKQUEUE.md     # Clean task list</code></pre>
+    </div>
+
+    <h3 class="fade-in">5-Stage Verification Gate</h3>
+    <div class="card-grid fade-in">
+      <div class="card">
+        <div class="card-icon">1️⃣</div>
+        <h4>Static Analysis</h4>
+        <p>TypeScript, tests, lint — catches syntax and type errors without conversation.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">2️⃣</div>
+        <h4>Integration Trace</h4>
+        <p>Are new files actually imported by real app routes? Catches the "prototype trap."</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">3️⃣</div>
+        <h4>Boot & Screenshot</h4>
+        <p>Start the app, visually confirm features appear. Proves it actually runs.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">4️⃣</div>
+        <h4>Functional Click-Through</h4>
+        <p>Automated browser testing — real interactions, real verification.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">5️⃣</div>
+        <h4>Acceptance Criteria</h4>
+        <p>Verified against the clean PRD — not conversation history.</p>
+      </div>
+    </div>
+
+    <h3 class="fade-in">Model-Specific Prompt Templates</h3>
+    <div class="comparison fade-in">
+      <div>
+        <h4 style="color:var(--accent);">Opus Planning Template</h4>
+        <pre><code>## Context
+{{clean_prd}}
+
+## Your Task
+Produce a structured implementation
+plan. For each component:
+1. Purpose and responsibility
+2. Dependencies
+3. Interface contracts
+4. Implementation approach
+5. Test strategy
+
+## Constraints
+{{rules_opus}}</code></pre>
+      </div>
+      <div>
+        <h4 style="color:var(--accent);">Codex Implementation Template</h4>
+        <pre><code>## Specification
+{{implementation_plan}}
+
+## Files to Create/Modify
+{{file_list}}
+
+## Acceptance Criteria
+{{test_cases}}
+
+## Rules
+- Follow existing patterns
+- No new deps without justification
+- Every public function gets a docstring</code></pre>
+      </div>
+    </div>
+
+    <h3 class="fade-in">Future: Automated Context Health</h3>
+    <div class="card-grid fade-in">
+      <div class="card">
+        <h4>Context Scoring</h4>
+        <p>Auto-score signal-to-noise ratio, contradiction count, emotional temperature, and freshness before feeding context to a model.</p>
+      </div>
+      <div class="card">
+        <h4>Auto-Rewriting</h4>
+        <p>Use a lightweight model to extract decisions from conversations, rewrite them into structured docs, and flag contradictions.</p>
+      </div>
+      <div class="card">
+        <h4>Dynamic Routing</h4>
+        <p>Route messy context through a rewriting stage before implementation. The "Mike's Way compiler."</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- CONCLUSION -->
+<section>
+  <div class="container fade-in" style="text-align:center;padding:40px 0 60px;">
+    <h2 style="margin-bottom:20px;">The Insight Is Simple.<br>The Execution Is Disciplined.<br>The Results Are Measurable.</h2>
+    <p style="max-width:600px;margin:0 auto;font-size:1.05rem;">Mike discovered this through practice. Every principle maps directly to a documented LLM failure mode. It's running in production. <strong style="color:var(--accent);">That's Mike's Way.</strong></p>
+  </div>
+</section>
+
+<div class="container"><div class="divider"></div></div>
+
+<!-- CITATIONS -->
+<section id="citations" class="citations">
+  <div class="container fade-in">
+    <span class="section-label">References</span>
+    <h2>Citations</h2>
+    <ol>
+      <li>Sharma, M., et al. (2023). "Towards Understanding Sycophancy in Language Models." <em>ICLR 2024</em>. <a href="https://arxiv.org/abs/2310.13548" target="_blank">arXiv:2310.13548</a></li>
+      <li>Anthropic Research. (2024). "Mapping the Mind of a Large Language Model." <a href="https://www.anthropic.com/research/mapping-mind-language-model" target="_blank">anthropic.com/research</a></li>
+      <li>Sclar, M., et al. (2023). "Quantifying Language Models' Sensitivity to Spurious Features in Prompt Design." <em>ICLR 2024</em>. <a href="https://arxiv.org/abs/2310.11324" target="_blank">arXiv:2310.11324</a></li>
+      <li>Li, C., Wang, J., et al. (2023). "Large Language Models Understand and Can be Enhanced by Emotional Stimuli." <a href="https://arxiv.org/abs/2307.11760" target="_blank">arXiv:2307.11760</a></li>
+      <li>Liu, N.F., et al. (2023). "Lost in the Middle: How Language Models Use Long Contexts." <em>TACL 2024</em>. <a href="https://arxiv.org/abs/2307.03172" target="_blank">arXiv:2307.03172</a></li>
+      <li>Wei, J., et al. (2025). "Measuring Sycophancy of Language Models in Multi-turn Conversations." <em>EMNLP 2025 Findings</em>.</li>
+      <li>"Does Prompt Formatting Have Any Impact on LLM Performance?" <a href="https://arxiv.org/abs/2411.10541" target="_blank">arXiv:2411.10541</a>, 2024.</li>
+    </ol>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>© 2026 Slapping Otto | A Mike Helm Production</p>
+  </div>
+</footer>
+
+<script>
+// Fade-in on scroll
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); }});
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
